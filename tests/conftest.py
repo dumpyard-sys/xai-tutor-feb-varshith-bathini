@@ -136,12 +136,12 @@ def client():
 
 @pytest.fixture
 def sample_invoice_data():
-    """Sample invoice data for testing - uses 'tax' per spec."""
+    """Sample invoice data for testing - 'tax' is the tax amount."""
     return {
         "client_id": 1,
         "issue_date": "2026-02-08",
         "due_date": "2026-03-08",
-        "tax": 10.0,  # Tax percentage per spec
+        "tax": 350.0,  # Tax amount (subtotal is $3500, so this is ~10%)
         "items": [
             {"product_id": 1, "quantity": 2},
             {"product_id": 2, "quantity": 1}

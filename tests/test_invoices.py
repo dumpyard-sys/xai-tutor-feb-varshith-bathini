@@ -27,8 +27,8 @@ class TestCreateInvoice:
         # Check calculations
         # 2 x Web Development ($1500) = $3000
         # 1 x Logo Design ($500) = $500
-        # Subtotal = $3500, Tax (10%) = $350, Total = $3850
-        assert data["tax"] == 350.0  # 10% of 3500
+        # Subtotal = $3500, Tax = $350 (provided), Total = $3850
+        assert data["tax"] == 350.0
         assert data["total"] == 3850.0
         
         # Check items

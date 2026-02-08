@@ -95,6 +95,16 @@ Data integrity is enforced at the database level:
   - At least one item required
 - **Clear error messages** that indicate what went wrong
 
+## Tax Field Semantics
+
+The `tax` field has **consistent semantics** on both input and output:
+
+- **Input**: The `tax` field is the tax **amount** to add to the invoice
+- **Output**: The `tax` field returns the same tax **amount**
+- **Total calculation**: `total = subtotal + tax`
+
+This ensures the API contract is clear and unambiguous.
+
 ## Invoice Response Fields
 
 Per the specification, the invoice response includes:
@@ -107,8 +117,8 @@ Per the specification, the invoice response includes:
 | `client` | Full client information |
 | `address` | Billing address |
 | `items` | List of invoice line items |
-| `tax` | Calculated tax amount |
-| `total` | Final invoice total |
+| `tax` | Tax amount (same as input) |
+| `total` | Final invoice total (subtotal + tax) |
 
 ## Code Organization
 

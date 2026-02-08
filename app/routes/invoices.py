@@ -29,7 +29,7 @@ class InvoiceCreate(BaseModel):
     address: Optional[str] = None  # If not provided, uses client's address
     issue_date: date
     due_date: date
-    tax: float = Field(default=0.0, ge=0.0, le=100.0, description="Tax percentage (0-100)")
+    tax: float = Field(default=0.0, ge=0.0, description="Tax amount to apply")
     items: List[InvoiceItemCreate] = Field(..., min_length=1)
 
     @model_validator(mode='after')
@@ -67,7 +67,7 @@ class InvoiceResponse(BaseModel):
     client: ClientResponse
     address: str
     items: List[InvoiceItemResponse]
-    tax: float  # Required field per spec
+    tax: float  # Tax amount (same as input)
     total: float
 
 
@@ -244,9 +244,8 @@ def create_invoice(invoice: InvoiceCreate):
     """
     Create a new invoice.
     - Auto-generates invoice number (INV-0001, INV-0002, etc.)
-    - Calculates tax and total automatically
     - Uses client's address if not provided
-    - Accepts 'tax' or 'tax_percentage' as input (percentage value)
+    - The 'tax' field is the tax amount to add to the subtotal
     """
     try:
         with get_db() as conn:
@@ -260,7 +259,7 @@ def create_invoice(invoice: InvoiceCreate):
             # Use client's address if not provided
             address = invoice.address if invoice.address else client["address"]
             
-            # Validate all products exist and calculate totals
+            # Validate all products exist and calculate subtotal
             subtotal = 0.0
             item_details = []
             
@@ -282,12 +281,11 @@ def create_invoice(invoice: InvoiceCreate):
                     "line_total": line_total
                 })
             
-            # Calculate tax and total (invoice.tax is the percentage)
-            tax_amount = subtotal * (invoice.tax / 100)
+            # Tax is provided as amount, total = subtotal + tax
+            tax_amount = invoice.tax
             total = subtotal + tax_amount
             
             # Insert invoice with retry for concurrency safety
-            # If concurrent inserts cause a collision, retry with the next number
             max_retries = 5
             invoice_id = None
             invoice_no = None
@@ -306,7 +304,7 @@ def create_invoice(invoice: InvoiceCreate):
                         invoice.due_date.isoformat(),
                         invoice.client_id,
                         address,
-                        invoice.tax,
+                        0.0,  # Not using percentage anymore
                         tax_amount,
                         subtotal,
                         total
@@ -315,7 +313,8 @@ def create_invoice(invoice: InvoiceCreate):
                     break  # Success, exit retry loop
                 except sqlite3.IntegrityError as e:
                     if "UNIQUE constraint failed: invoices.invoice_no" in str(e):
-                        # Another request inserted this number, retry
+                        # Rollback to clear failed transaction state
+                        conn.rollback()
                         continue
                     raise  # Re-raise other integrity errors
             
