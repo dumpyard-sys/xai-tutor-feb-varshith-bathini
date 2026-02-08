@@ -117,23 +117,6 @@ class TestCreateInvoice:
         
         assert response.status_code == 201
 
-    def test_create_invoice_accepts_tax_percentage_alias(self, client):
-        """Test that 'tax_percentage' is accepted as alias for 'tax'."""
-        invoice_data = {
-            "client_id": 1,
-            "issue_date": "2026-02-08",
-            "due_date": "2026-03-08",
-            "tax_percentage": 15.0,  # Using alias
-            "items": [{"product_id": 1, "quantity": 1}]
-        }
-        response = client.post("/invoices", json=invoice_data)
-        
-        assert response.status_code == 201
-        data = response.json()
-        # 1500 * 15% = 225
-        assert data["tax"] == 225.0
-        assert data["total"] == 1725.0
-
 
 class TestListInvoices:
     """Tests for GET /invoices endpoint."""

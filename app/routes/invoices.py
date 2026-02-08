@@ -2,6 +2,7 @@
 Invoice Management API Routes
 """
 
+import sqlite3
 from datetime import date
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException
@@ -28,11 +29,8 @@ class InvoiceCreate(BaseModel):
     address: Optional[str] = None  # If not provided, uses client's address
     issue_date: date
     due_date: date
-    # Accept both 'tax' and 'tax_percentage' - spec says 'tax', we treat as percentage
-    tax: float = Field(default=0.0, ge=0.0, le=100.0, alias="tax_percentage")
+    tax: float = Field(default=0.0, ge=0.0, le=100.0, description="Tax percentage (0-100)")
     items: List[InvoiceItemCreate] = Field(..., min_length=1)
-
-    model_config = {"populate_by_name": True}  # Allow both field name and alias
 
     @model_validator(mode='after')
     def validate_dates(self):
@@ -94,11 +92,9 @@ class InvoiceListResponse(BaseModel):
 # Helper Functions
 # ============================================================================
 
-def generate_invoice_number(cursor) -> str:
+def generate_next_invoice_number(cursor) -> str:
     """
-    Generate a unique sequential invoice number.
-    Simple approach: get max existing number and increment.
-    UNIQUE constraint on invoice_no column ensures no duplicates.
+    Generate the next sequential invoice number based on existing invoices.
     """
     cursor.execute("SELECT MAX(CAST(SUBSTR(invoice_no, 5) AS INTEGER)) FROM invoices")
     result = cursor.fetchone()
@@ -290,27 +286,44 @@ def create_invoice(invoice: InvoiceCreate):
             tax_amount = subtotal * (invoice.tax / 100)
             total = subtotal + tax_amount
             
-            # Generate invoice number
-            invoice_no = generate_invoice_number(cursor)
+            # Insert invoice with retry for concurrency safety
+            # If concurrent inserts cause a collision, retry with the next number
+            max_retries = 5
+            invoice_id = None
+            invoice_no = None
             
-            # Insert invoice
-            cursor.execute("""
-                INSERT INTO invoices (
-                    invoice_no, issue_date, due_date, client_id, address,
-                    tax_percentage, tax_amount, subtotal, total
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                invoice_no,
-                invoice.issue_date.isoformat(),
-                invoice.due_date.isoformat(),
-                invoice.client_id,
-                address,
-                invoice.tax,
-                tax_amount,
-                subtotal,
-                total
-            ))
-            invoice_id = cursor.lastrowid
+            for attempt in range(max_retries):
+                invoice_no = generate_next_invoice_number(cursor)
+                try:
+                    cursor.execute("""
+                        INSERT INTO invoices (
+                            invoice_no, issue_date, due_date, client_id, address,
+                            tax_percentage, tax_amount, subtotal, total
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        invoice_no,
+                        invoice.issue_date.isoformat(),
+                        invoice.due_date.isoformat(),
+                        invoice.client_id,
+                        address,
+                        invoice.tax,
+                        tax_amount,
+                        subtotal,
+                        total
+                    ))
+                    invoice_id = cursor.lastrowid
+                    break  # Success, exit retry loop
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint failed: invoices.invoice_no" in str(e):
+                        # Another request inserted this number, retry
+                        continue
+                    raise  # Re-raise other integrity errors
+            
+            if invoice_id is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to generate unique invoice number after retries"
+                )
             
             # Insert invoice items
             items_response = []

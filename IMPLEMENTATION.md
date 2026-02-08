@@ -152,10 +152,14 @@ app/
 
 ## Invoice Number Generation
 
-Invoice numbers follow a simple sequential pattern:
+Invoice numbers follow a sequential pattern with concurrency safety:
+
 1. Query the maximum existing invoice number
 2. Increment and format as `INV-NNNN`
-3. The UNIQUE constraint on `invoice_no` prevents duplicates
+3. Attempt to insert - if UNIQUE constraint fails (concurrent insert), retry
+4. Up to 5 retries before returning an error
+
+This approach handles concurrent requests gracefully while maintaining the required sequential format.
 
 ## What Was NOT Implemented (Per Spec)
 

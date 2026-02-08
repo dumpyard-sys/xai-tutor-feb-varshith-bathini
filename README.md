@@ -52,7 +52,7 @@ curl -X POST http://localhost:8000/invoices \
 | `client_id` | integer | Yes | ID of the client (from seed data) |
 | `issue_date` | string (date) | Yes | Invoice issue date (YYYY-MM-DD) |
 | `due_date` | string (date) | Yes | Invoice due date (must be >= issue_date) |
-| `tax` | float | No | Tax percentage (default: 0). Also accepts `tax_percentage` |
+| `tax` | float | No | Tax percentage (0-100, default: 0) |
 | `address` | string | No | Billing address (defaults to client's address) |
 | `items` | array | Yes | List of invoice items (min 1) |
 | `items[].product_id` | integer | Yes | ID of the product (from seed data) |
@@ -111,7 +111,6 @@ pytest tests/ -v
 │       ├── health.py        # Health check endpoint
 │       └── invoices.py      # Invoice CRUD endpoints
 ├── migrations/
-│   ├── 001_create_items_table.py
 │   └── 002_create_invoicing_tables.py
 ├── tests/
 │   ├── __init__.py
