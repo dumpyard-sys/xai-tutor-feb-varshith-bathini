@@ -1,141 +1,204 @@
-# Invoicing System Backend - Backend Assessment
+# Invoicing System API
 
-**Time Limit: 60 minutes**
+A RESTful API for managing invoices, built with FastAPI and SQLite.
 
-## Important Instructions
-
-> **1. Fork this repo into your personal github account**
-> 
-> **2. Do not raise Pull Request in the original repo**
-> 
-> **3. Application must be runnable with `docker-compose up` command**
-> 
-> **4. Complete as many APIs as possible within the time limit**
-> 
-> **5. Prioritize working functionality - do not submit broken code that fails to run with `docker-compose up`**
-
-### Tips
-- Focus on core functionality first, then add features incrementally
-- Test your application with `docker-compose up` before final submission
-- A partially complete but working solution is better than a complete but broken one
-
----
-
-A FastAPI backend project with SQLite database.
-
-## Objective
-
-Build a backend API for an **Invoicing System** that allows users to create and manage invoices.
-
-## Functional Requirements
-
-### Single User System
-- No authentication required. The system is designed for a single user.
-
-### Invoice Management
-- User should be able to create invoices
-- User should be able to list invoices
-- User should be able to get an invoice by ID
-- User should be able to delete an invoice
-
-An invoice consists of:
-- **Client**
-- **Products** (items)
-
-For **products** and **clients**, do not create APIs—use seed data. The developer needs to design the database schema and APIs for the invoicing system.
-
-
-
-## Data Requirements (Fields)
-
-### Product (seed data only)
-- name
-- price
-
-### Client (seed data only)
-- name
-- address
-- company registration no.
-
-### Invoice
-- Invoice no
-- issue date
-- due date
-- client
-- address
-- items
-- tax
-- total
-
-## Quick Start (Docker)
-
-The easiest way to run the application:
+## Quick Start
 
 ```bash
 docker-compose up --build
 ```
 
-This will:
-- Build the Docker image
-- Run database migrations automatically (if applicable)
-- Start the API server at `http://localhost:8000`
+The API will be available at:
+- **API**: http://localhost:8000
+- **Interactive Docs (Swagger)**: http://localhost:8000/docs
+- **OpenAPI Schema**: http://localhost:8000/openapi.json
 
-To stop the application:
+## API Endpoints
+
+### Health Check
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check endpoint |
+
+### Invoices
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/invoices` | List all invoices |
+| GET | `/invoices/{id}` | Get invoice by ID |
+| POST | `/invoices` | Create a new invoice |
+| DELETE | `/invoices/{id}` | Delete an invoice |
+
+### Products (Read-only)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/products` | List all products |
+| GET | `/products/{id}` | Get product by ID |
+
+### Clients (Read-only)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/clients` | List all clients |
+| GET | `/clients/{id}` | Get client by ID |
+
+## Creating an Invoice
 
 ```bash
-docker-compose down
+curl -X POST http://localhost:8000/invoices \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_id": 1,
+    "issue_date": "2026-02-08",
+    "due_date": "2026-03-08",
+    "tax_percentage": 10.0,
+    "items": [
+      {"product_id": 1, "quantity": 2},
+      {"product_id": 2, "quantity": 1}
+    ]
+  }'
+```
+
+### Request Body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `client_id` | integer | Yes | ID of the client |
+| `issue_date` | string (date) | Yes | Invoice issue date (YYYY-MM-DD) |
+| `due_date` | string (date) | Yes | Invoice due date (YYYY-MM-DD) |
+| `tax_percentage` | float | No | Tax percentage (default: 0) |
+| `address` | string | No | Billing address (defaults to client's address) |
+| `items` | array | Yes | List of invoice items (min 1) |
+| `items[].product_id` | integer | Yes | ID of the product |
+| `items[].quantity` | integer | No | Quantity (default: 1) |
+
+### Response
+
+```json
+{
+  "id": 1,
+  "invoice_no": "INV-0001",
+  "issue_date": "2026-02-08",
+  "due_date": "2026-03-08",
+  "client": {
+    "id": 1,
+    "name": "Acme Corporation",
+    "address": "123 Business Ave, Suite 100, New York, NY 10001",
+    "company_registration_no": "REG-2024-ACME-001"
+  },
+  "address": "123 Business Ave, Suite 100, New York, NY 10001",
+  "items": [
+    {
+      "id": 1,
+      "product_id": 1,
+      "product_name": "Web Development Service",
+      "quantity": 2,
+      "unit_price": 1500.0,
+      "line_total": 3000.0
+    }
+  ],
+  "subtotal": 3500.0,
+  "tax_percentage": 10.0,
+  "tax_amount": 350.0,
+  "total": 3850.0
+}
+```
+
+## Running Tests
+
+```bash
+# Install test dependencies
+pip install pytest
+
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage (if pytest-cov installed)
+pytest tests/ -v --cov=app
+```
+
+## Project Structure
+
+```
+.
+├── app/
+│   ├── __init__.py
+│   ├── main.py              # FastAPI application entry point
+│   ├── database.py          # Database connection handling
+│   └── routes/
+│       ├── __init__.py
+│       ├── health.py        # Health check endpoint
+│       ├── invoices.py      # Invoice CRUD endpoints
+│       ├── products.py      # Products read endpoint
+│       └── clients.py       # Clients read endpoint
+├── migrations/
+│   ├── 001_create_items_table.py
+│   └── 002_create_invoicing_tables.py
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py          # Test fixtures
+│   ├── test_health.py
+│   ├── test_invoices.py
+│   ├── test_products.py
+│   └── test_clients.py
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+├── migrate.py               # Migration runner
+├── ASSESSMENT.md            # Original assessment instructions
+├── IMPLEMENTATION.md        # Implementation details
+└── README.md                # This file
 ```
 
 ## Manual Setup (Without Docker)
 
-### 1. Create and activate a virtual environment
-
 ```bash
+# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
 
-### 2. Install dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-### 3. Run database migrations (if applicable)
-
-```bash
+# Run migrations
 python migrate.py upgrade
-```
 
-### 4. Start the server
-
-```bash
+# Start server
 uvicorn app.main:app --reload
 ```
 
-Or run directly:
-
-```bash
-python -m app.main
-```
-
-The API will be available at `http://localhost:8000`
-
 ## Database Migrations
 
-### Running Migrations
-
-**Apply all pending migrations:**
 ```bash
+# Apply migrations
 python migrate.py upgrade
-```
 
-**Revert all migrations:**
-```bash
+# Revert migrations
 python migrate.py downgrade
-```
 
-**List migration status:**
-```bash
+# List migration status
 python migrate.py list
 ```
+
+## Seed Data
+
+The application comes with pre-seeded data:
+
+### Products (8 items)
+- Web Development Service ($1,500)
+- Logo Design ($500)
+- Mobile App Development ($3,000)
+- SEO Optimization ($750)
+- Content Writing ($200)
+- UI/UX Design ($1,200)
+- Server Maintenance ($400)
+- Database Administration ($800)
+
+### Clients (5 companies)
+- Acme Corporation
+- TechStart Inc.
+- Global Solutions Ltd.
+- Creative Media Group
+- DataFlow Systems
+
+## License
+
+This project was created as part of a backend assessment.
