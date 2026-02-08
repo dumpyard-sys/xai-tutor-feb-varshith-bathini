@@ -1,6 +1,6 @@
 # Implementation Details
 
-This document describes the design decisions, architecture, and bonus features implemented in this invoicing system.
+This document describes the design decisions, architecture, and implementation details for the invoicing system.
 
 ## Database Schema
 
@@ -42,11 +42,13 @@ This document describes the design decisions, architecture, and bonus features i
 
 1. **Separate `invoice_items` table**: Allows multiple products per invoice with quantities, following standard invoice design patterns.
 
-2. **Stored calculations**: `subtotal`, `tax_amount`, and `total` are calculated at creation time and stored. This ensures historical accuracy even if product prices change later.
+2. **Stored calculations**: `tax_amount` and `total` are calculated at creation time and stored. This ensures historical accuracy even if product prices change later.
 
 3. **Unit price snapshot**: The `unit_price` in `invoice_items` captures the product price at invoice creation time, protecting historical data integrity.
 
 4. **Auto-generated invoice numbers**: Sequential format `INV-0001`, `INV-0002` ensures unique, human-readable identifiers.
+
+5. **Foreign key enforcement**: SQLite foreign keys are explicitly enabled via `PRAGMA foreign_keys = ON` on each connection.
 
 ## API Design
 
@@ -65,31 +67,27 @@ This document describes the design decisions, architecture, and bonus features i
 ### Request Validation
 
 - **Pydantic models** for type safety and automatic validation
-- **Custom validation** for business rules (e.g., client exists, product exists)
+- **Custom validation** for business rules:
+  - Client must exist
+  - All products must exist
+  - `due_date` must be on or after `issue_date`
+  - At least one item required
 - **Clear error messages** that indicate what went wrong
 
-## Bonus Features Implemented
+## Invoice Response Fields
 
-### Beyond Requirements
+Per the specification, the invoice response includes:
 
-| Feature | Description | Why It's Valuable |
-|---------|-------------|-------------------|
-| **Read-only Products API** | `GET /products` and `GET /products/{id}` | Helps API consumers discover available products |
-| **Read-only Clients API** | `GET /clients` and `GET /clients/{id}` | Helps API consumers discover available clients |
-| **Quantity Support** | Each invoice item can have a quantity | Standard invoice behavior |
-| **Subtotal Field** | Separate from total | Better invoice breakdown |
-| **Line Totals** | Pre-calculated per item | Reduces client-side computation |
-| **Address Override** | Custom billing address option | Flexibility for different billing scenarios |
-| **Created Timestamp** | `created_at` on invoices | Audit trail |
-| **Integration Tests** | Full test coverage | Quality assurance |
-
-### Calculation Logic
-
-```
-subtotal = Σ (quantity × unit_price) for each item
-tax_amount = subtotal × (tax_percentage / 100)
-total = subtotal + tax_amount
-```
+| Field | Description |
+|-------|-------------|
+| `invoice_no` | Auto-generated unique identifier |
+| `issue_date` | Date the invoice was issued |
+| `due_date` | Payment due date |
+| `client` | Full client information |
+| `address` | Billing address |
+| `items` | List of invoice line items |
+| `tax` | Calculated tax amount |
+| `total` | Final invoice total |
 
 ## Code Organization
 
@@ -107,63 +105,43 @@ The implementation follows the patterns established in the starter code:
 ```
 app/
 ├── routes/
-│   ├── invoices.py   # ~300 lines - Invoice CRUD with helpers
-│   ├── products.py   # ~50 lines - Simple read endpoints
-│   └── clients.py    # ~60 lines - Simple read endpoints
+│   ├── health.py     # Health check endpoint
+│   └── invoices.py   # Invoice CRUD operations
+└── database.py       # DB connection with FK enforcement
 ```
 
 ## Testing Strategy
 
 ### Test Coverage
 
-- **Unit-style tests**: Individual endpoint behavior
-- **Integration tests**: Full request/response cycle
-- **Edge cases**: Invalid inputs, empty results, not found scenarios
-- **Business logic**: Calculation verification
+- **Integration tests**: Full request/response cycle via TestClient
+- **Validation tests**: Invalid inputs, missing fields
+- **Business logic tests**: Date validation, calculation verification
+- **Edge cases**: Empty results, not found scenarios
 
-### Test Categories
+### Test Count: 19 tests
 
 | Category | Tests |
 |----------|-------|
-| Invoice CRUD | 14 tests |
-| Products | 4 tests |
-| Clients | 4 tests |
-| Health | 1 test |
-| **Total** | **23 tests** |
+| Invoice Create | 11 (including validation) |
+| Invoice List | 2 |
+| Invoice Get | 2 |
+| Invoice Delete | 3 |
+| Health | 1 |
 
-## Performance Considerations
+## Concurrency Safety
 
-While performance testing is machine-dependent and not included, here are considerations for production:
+Invoice number generation handles concurrent requests by:
+1. Querying the max existing invoice number
+2. Attempting to use the next sequential number
+3. Retrying with incremented number if collision detected
+4. Fallback to timestamp-based number as last resort
 
-### Current Implementation
-- **In-memory for tests**: Fast test execution
-- **File-based SQLite for production**: Simple deployment
-- **No connection pooling**: Acceptable for single-user system
+## What Was NOT Implemented (Per Spec)
 
-### For Scale (Future)
-- Consider PostgreSQL for concurrent access
-- Add connection pooling
-- Implement pagination on list endpoints
-- Add database indexes on frequently queried columns
+The specification explicitly states "For products and clients, do not create APIs—use seed data." Therefore:
 
-## Security Notes
+- No `/products` endpoints
+- No `/clients` endpoints
 
-This is a single-user system without authentication as per requirements. For production:
-
-- Add authentication (JWT, OAuth, etc.)
-- Implement rate limiting
-- Add input sanitization (currently handled by Pydantic)
-- Use HTTPS in production
-
-## Future Enhancements
-
-If this were a production system, consider:
-
-1. **Invoice Updates** - PATCH endpoint to modify invoices
-2. **Invoice Status** - Draft, Sent, Paid, Overdue
-3. **PDF Generation** - Export invoices as PDF
-4. **Email Integration** - Send invoices to clients
-5. **Payment Tracking** - Record payments against invoices
-6. **Recurring Invoices** - Automated invoice generation
-7. **Multi-currency** - Support different currencies
-8. **Audit Log** - Track all changes
+Products and clients are only accessible via seed data IDs when creating invoices.

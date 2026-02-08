@@ -7,9 +7,11 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "app.db")
 
 
 def get_connection() -> sqlite3.Connection:
-    """Create a new database connection."""
+    """Create a new database connection with foreign keys enabled."""
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row  # Enable dict-like access to rows
+    # Enable foreign key constraint enforcement
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 

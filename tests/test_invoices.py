@@ -19,7 +19,6 @@ class TestCreateInvoice:
         assert data["invoice_no"] == "INV-0001"
         assert data["issue_date"] == "2026-02-08"
         assert data["due_date"] == "2026-03-08"
-        assert data["tax_percentage"] == 10.0
         
         # Check client info
         assert data["client"]["id"] == 1
@@ -28,9 +27,8 @@ class TestCreateInvoice:
         # Check calculations
         # 2 x Web Development ($1500) = $3000
         # 1 x Logo Design ($500) = $500
-        # Subtotal = $3500
-        assert data["subtotal"] == 3500.0
-        assert data["tax_amount"] == 350.0  # 10% of 3500
+        # Subtotal = $3500, Tax (10%) = $350, Total = $3850
+        assert data["tax"] == 350.0  # 10% of 3500
         assert data["total"] == 3850.0
         
         # Check items
@@ -62,9 +60,8 @@ class TestCreateInvoice:
         
         assert response.status_code == 201
         data = response.json()
-        assert data["tax_percentage"] == 0.0
-        assert data["tax_amount"] == 0.0
-        assert data["subtotal"] == data["total"]
+        assert data["tax"] == 0.0
+        assert data["total"] == 3500.0  # No tax added
 
     def test_create_invoice_invalid_client(self, client, sample_invoice_data):
         """Test that invalid client ID returns 400 error."""
@@ -104,6 +101,22 @@ class TestCreateInvoice:
         response2 = client.post("/invoices", json=sample_invoice_data)
         assert response2.json()["invoice_no"] == "INV-0002"
 
+    def test_create_invoice_due_date_before_issue_date(self, client, sample_invoice_data):
+        """Test that due_date before issue_date returns 422 validation error."""
+        sample_invoice_data["issue_date"] = "2026-03-08"
+        sample_invoice_data["due_date"] = "2026-02-08"  # Before issue date
+        response = client.post("/invoices", json=sample_invoice_data)
+        
+        assert response.status_code == 422
+
+    def test_create_invoice_due_date_same_as_issue_date(self, client, sample_invoice_data):
+        """Test that due_date can be same as issue_date."""
+        sample_invoice_data["issue_date"] = "2026-02-08"
+        sample_invoice_data["due_date"] = "2026-02-08"  # Same as issue date
+        response = client.post("/invoices", json=sample_invoice_data)
+        
+        assert response.status_code == 201
+
 
 class TestListInvoices:
     """Tests for GET /invoices endpoint."""
@@ -130,6 +143,7 @@ class TestListInvoices:
         assert invoice["invoice_no"] == "INV-0001"
         assert invoice["client_name"] == "Acme Corp"
         assert invoice["item_count"] == 2
+        assert invoice["tax"] == 350.0
         assert invoice["total"] == 3850.0
 
 
@@ -148,6 +162,7 @@ class TestGetInvoice:
         data = response.json()
         assert data["id"] == invoice_id
         assert data["invoice_no"] == "INV-0001"
+        assert data["tax"] == 350.0
         assert len(data["items"]) == 2
 
     def test_get_invoice_not_found(self, client):

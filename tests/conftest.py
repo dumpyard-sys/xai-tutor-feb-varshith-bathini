@@ -36,18 +36,14 @@ def client():
     conn = get_connection()
     cursor = conn.cursor()
     
+    # Enable foreign keys
+    cursor.execute("PRAGMA foreign_keys = ON")
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS _migrations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL
         )
     """)
     

@@ -28,18 +28,6 @@ The API will be available at:
 | POST | `/invoices` | Create a new invoice |
 | DELETE | `/invoices/{id}` | Delete an invoice |
 
-### Products (Read-only)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/products` | List all products |
-| GET | `/products/{id}` | Get product by ID |
-
-### Clients (Read-only)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/clients` | List all clients |
-| GET | `/clients/{id}` | Get client by ID |
-
 ## Creating an Invoice
 
 ```bash
@@ -61,13 +49,13 @@ curl -X POST http://localhost:8000/invoices \
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `client_id` | integer | Yes | ID of the client |
+| `client_id` | integer | Yes | ID of the client (from seed data) |
 | `issue_date` | string (date) | Yes | Invoice issue date (YYYY-MM-DD) |
-| `due_date` | string (date) | Yes | Invoice due date (YYYY-MM-DD) |
+| `due_date` | string (date) | Yes | Invoice due date (must be >= issue_date) |
 | `tax_percentage` | float | No | Tax percentage (default: 0) |
 | `address` | string | No | Billing address (defaults to client's address) |
 | `items` | array | Yes | List of invoice items (min 1) |
-| `items[].product_id` | integer | Yes | ID of the product |
+| `items[].product_id` | integer | Yes | ID of the product (from seed data) |
 | `items[].quantity` | integer | No | Quantity (default: 1) |
 
 ### Response
@@ -95,9 +83,7 @@ curl -X POST http://localhost:8000/invoices \
       "line_total": 3000.0
     }
   ],
-  "subtotal": 3500.0,
-  "tax_percentage": 10.0,
-  "tax_amount": 350.0,
+  "tax": 350.0,
   "total": 3850.0
 }
 ```
@@ -106,13 +92,10 @@ curl -X POST http://localhost:8000/invoices \
 
 ```bash
 # Install test dependencies
-pip install pytest
+pip install pytest httpx
 
 # Run all tests
 pytest tests/ -v
-
-# Run with coverage (if pytest-cov installed)
-pytest tests/ -v --cov=app
 ```
 
 ## Project Structure
@@ -126,9 +109,7 @@ pytest tests/ -v --cov=app
 │   └── routes/
 │       ├── __init__.py
 │       ├── health.py        # Health check endpoint
-│       ├── invoices.py      # Invoice CRUD endpoints
-│       ├── products.py      # Products read endpoint
-│       └── clients.py       # Clients read endpoint
+│       └── invoices.py      # Invoice CRUD endpoints
 ├── migrations/
 │   ├── 001_create_items_table.py
 │   └── 002_create_invoicing_tables.py
@@ -136,9 +117,7 @@ pytest tests/ -v --cov=app
 │   ├── __init__.py
 │   ├── conftest.py          # Test fixtures
 │   ├── test_health.py
-│   ├── test_invoices.py
-│   ├── test_products.py
-│   └── test_clients.py
+│   └── test_invoices.py
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
@@ -180,24 +159,28 @@ python migrate.py list
 
 ## Seed Data
 
-The application comes with pre-seeded data:
+Products and clients are pre-seeded and accessed by ID when creating invoices.
 
 ### Products (8 items)
-- Web Development Service ($1,500)
-- Logo Design ($500)
-- Mobile App Development ($3,000)
-- SEO Optimization ($750)
-- Content Writing ($200)
-- UI/UX Design ($1,200)
-- Server Maintenance ($400)
-- Database Administration ($800)
+| ID | Name | Price |
+|----|------|-------|
+| 1 | Web Development Service | $1,500 |
+| 2 | Logo Design | $500 |
+| 3 | Mobile App Development | $3,000 |
+| 4 | SEO Optimization | $750 |
+| 5 | Content Writing | $200 |
+| 6 | UI/UX Design | $1,200 |
+| 7 | Server Maintenance | $400 |
+| 8 | Database Administration | $800 |
 
 ### Clients (5 companies)
-- Acme Corporation
-- TechStart Inc.
-- Global Solutions Ltd.
-- Creative Media Group
-- DataFlow Systems
+| ID | Name | Registration No. |
+|----|------|------------------|
+| 1 | Acme Corporation | REG-2024-ACME-001 |
+| 2 | TechStart Inc. | REG-2024-TECH-002 |
+| 3 | Global Solutions Ltd. | REG-2024-GLOB-003 |
+| 4 | Creative Media Group | REG-2024-CREA-004 |
+| 5 | DataFlow Systems | REG-2024-DATA-005 |
 
 ## License
 

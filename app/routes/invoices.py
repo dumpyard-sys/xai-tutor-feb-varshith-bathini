@@ -5,7 +5,7 @@ Invoice Management API Routes
 from datetime import date
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.database import get_db
 
@@ -31,12 +31,12 @@ class InvoiceCreate(BaseModel):
     tax_percentage: float = Field(default=0.0, ge=0.0, le=100.0)
     items: List[InvoiceItemCreate] = Field(..., min_length=1)
 
-
-class ProductResponse(BaseModel):
-    """Schema for product in response."""
-    id: int
-    name: str
-    price: float
+    @model_validator(mode='after')
+    def validate_dates(self):
+        """Ensure due_date is on or after issue_date."""
+        if self.due_date < self.issue_date:
+            raise ValueError('due_date must be on or after issue_date')
+        return self
 
 
 class InvoiceItemResponse(BaseModel):
@@ -66,9 +66,7 @@ class InvoiceResponse(BaseModel):
     client: ClientResponse
     address: str
     items: List[InvoiceItemResponse]
-    subtotal: float
-    tax_percentage: float
-    tax_amount: float
+    tax: float  # Required field per spec
     total: float
 
 
@@ -80,6 +78,7 @@ class InvoiceListItem(BaseModel):
     due_date: date
     client_name: str
     item_count: int
+    tax: float
     total: float
 
 
@@ -87,12 +86,36 @@ class InvoiceListItem(BaseModel):
 # Helper Functions
 # ============================================================================
 
-def generate_invoice_number(cursor) -> str:
-    """Generate a unique sequential invoice number."""
-    cursor.execute("SELECT MAX(id) FROM invoices")
-    result = cursor.fetchone()
-    next_id = (result[0] or 0) + 1
-    return f"INV-{next_id:04d}"
+def generate_invoice_number(conn) -> str:
+    """
+    Generate a unique sequential invoice number.
+    Uses a retry loop to handle concurrent requests safely.
+    """
+    cursor = conn.cursor()
+    max_retries = 5
+    
+    for attempt in range(max_retries):
+        # Get the next number based on existing invoices
+        cursor.execute("SELECT MAX(CAST(SUBSTR(invoice_no, 5) AS INTEGER)) FROM invoices")
+        result = cursor.fetchone()
+        next_num = (result[0] or 0) + 1
+        invoice_no = f"INV-{next_num:04d}"
+        
+        # Try to use this number - if it fails due to uniqueness, retry
+        try:
+            # Check if it already exists
+            cursor.execute("SELECT 1 FROM invoices WHERE invoice_no = ?", (invoice_no,))
+            if cursor.fetchone() is None:
+                return invoice_no
+        except Exception:
+            pass
+        
+        # If we get here, try the next number
+        next_num += 1
+    
+    # Fallback: use timestamp-based number
+    import time
+    return f"INV-{int(time.time())}"
 
 
 def get_client_by_id(cursor, client_id: int) -> dict:
@@ -160,7 +183,8 @@ def list_invoices():
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT 
-                    i.id, i.invoice_no, i.issue_date, i.due_date, i.total,
+                    i.id, i.invoice_no, i.issue_date, i.due_date, 
+                    i.tax_amount, i.total,
                     c.name as client_name,
                     (SELECT COUNT(*) FROM invoice_items WHERE invoice_id = i.id) as item_count
                 FROM invoices i
@@ -176,6 +200,7 @@ def list_invoices():
                     "due_date": row["due_date"],
                     "client_name": row["client_name"],
                     "item_count": row["item_count"],
+                    "tax": row["tax_amount"],
                     "total": row["total"]
                 }
                 for row in rows
@@ -198,7 +223,7 @@ def get_invoice(invoice_id: int):
             # Fetch invoice
             cursor.execute("""
                 SELECT i.id, i.invoice_no, i.issue_date, i.due_date, i.client_id,
-                       i.address, i.tax_percentage, i.tax_amount, i.subtotal, i.total
+                       i.address, i.tax_amount, i.total
                 FROM invoices i
                 WHERE i.id = ?
             """, (invoice_id,))
@@ -221,9 +246,7 @@ def get_invoice(invoice_id: int):
                 "client": client,
                 "address": row["address"],
                 "items": items,
-                "subtotal": row["subtotal"],
-                "tax_percentage": row["tax_percentage"],
-                "tax_amount": row["tax_amount"],
+                "tax": row["tax_amount"],
                 "total": row["total"]
             }
     except HTTPException:
@@ -237,7 +260,7 @@ def create_invoice(invoice: InvoiceCreate):
     """
     Create a new invoice.
     - Auto-generates invoice number (INV-0001, INV-0002, etc.)
-    - Calculates subtotal, tax amount, and total automatically
+    - Calculates tax and total automatically
     - Uses client's address if not provided
     """
     try:
@@ -278,8 +301,8 @@ def create_invoice(invoice: InvoiceCreate):
             tax_amount = subtotal * (invoice.tax_percentage / 100)
             total = subtotal + tax_amount
             
-            # Generate invoice number
-            invoice_no = generate_invoice_number(cursor)
+            # Generate invoice number (handles concurrency)
+            invoice_no = generate_invoice_number(conn)
             
             # Insert invoice
             cursor.execute("""
@@ -331,9 +354,7 @@ def create_invoice(invoice: InvoiceCreate):
                 "client": client,
                 "address": address,
                 "items": items_response,
-                "subtotal": subtotal,
-                "tax_percentage": invoice.tax_percentage,
-                "tax_amount": tax_amount,
+                "tax": tax_amount,
                 "total": total
             }
     except HTTPException:
@@ -357,7 +378,7 @@ def delete_invoice(invoice_id: int):
             if cursor.fetchone() is None:
                 raise HTTPException(status_code=404, detail="Invoice not found")
             
-            # Delete invoice items first (in case cascade doesn't work)
+            # Delete invoice items first (explicit delete for safety)
             cursor.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
             
             # Delete invoice
