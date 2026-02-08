@@ -16,8 +16,7 @@ This document describes the design decisions, architecture, and implementation d
 │ company_    │       │ CHECK(>0)   │       │ due_date         │
 │ registration│       └─────────────┘       │ client_id (FK)───┼──┐
 │ _no         │              │              │ address          │  │
-└─────────────┘              │              │ tax_percentage   │  │
-       │                     │              │ tax_amount       │  │
+└─────────────┘              │              │ tax              │  │
        │                     │              │ subtotal         │  │
        │                     │              │ total            │  │
        │                     │              │ created_at       │  │
@@ -56,14 +55,14 @@ Data integrity is enforced at the database level:
 | Table | Constraint |
 |-------|------------|
 | products | `price > 0` |
-| invoices | `tax_percentage >= 0`, `tax_amount >= 0`, `subtotal >= 0`, `total >= 0` |
+| invoices | `tax >= 0`, `subtotal >= 0`, `total >= 0` |
 | invoice_items | `quantity > 0`, `unit_price > 0`, `line_total > 0` |
 
 ### Design Decisions
 
 1. **Separate `invoice_items` table**: Allows multiple products per invoice with quantities, following standard invoice design patterns.
 
-2. **Stored calculations**: `tax_amount` and `total` are calculated at creation time and stored. This ensures historical accuracy even if product prices change later.
+2. **Stored calculations**: `tax`, `subtotal`, and `total` are stored at creation time. This ensures historical accuracy even if product prices change later.
 
 3. **Unit price snapshot**: The `unit_price` in `invoice_items` captures the product price at invoice creation time, protecting historical data integrity.
 
@@ -80,6 +79,7 @@ Data integrity is enforced at the database level:
 | Create | POST | 201 Created |
 | Read (list) | GET | 200 OK |
 | Read (single) | GET | 200 OK |
+| Update | PUT | 200 OK |
 | Delete | DELETE | 204 No Content |
 | Not Found | - | 404 Not Found |
 | Validation Error | - | 400 Bad Request |
@@ -93,7 +93,15 @@ Data integrity is enforced at the database level:
   - All products must exist
   - `due_date` must be on or after `issue_date`
   - At least one item required
+  - Address max length: 500 characters
 - **Clear error messages** that indicate what went wrong
+
+### Pagination & Filtering
+
+The list endpoint supports:
+- **Pagination**: `limit` (1-100, default 20) and `offset` parameters
+- **Filtering**: by `client_id`, `issue_date_from/to`, `due_date_from/to`
+- **Response metadata**: `total_count`, `limit`, `offset` for pagination UI
 
 ## Tax Field Semantics
 
@@ -118,6 +126,7 @@ Per the specification, the invoice response includes:
 | `address` | Billing address |
 | `items` | List of invoice line items |
 | `tax` | Tax amount (same as input) |
+| `subtotal` | Sum of all line item totals |
 | `total` | Final invoice total (subtotal + tax) |
 
 ## Code Organization
@@ -138,7 +147,8 @@ app/
 ├── routes/
 │   ├── health.py     # Health check endpoint
 │   └── invoices.py   # Invoice CRUD operations
-└── database.py       # DB connection with FK enforcement
+├── database.py       # DB connection with FK enforcement
+└── schema.py         # Shared database schema definitions
 ```
 
 ## Testing Strategy
@@ -150,13 +160,14 @@ app/
 - **Business logic tests**: Date validation, calculation verification
 - **Edge cases**: Empty results, not found scenarios
 
-### Test Count: 19 tests
+### Test Count: 33 tests
 
 | Category | Tests |
 |----------|-------|
-| Invoice Create | 11 (including validation) |
-| Invoice List | 2 |
+| Invoice Create | 13 (including validation) |
+| Invoice List | 6 (pagination & filtering) |
 | Invoice Get | 2 |
+| Invoice Update | 9 |
 | Invoice Delete | 3 |
 | Health | 1 |
 

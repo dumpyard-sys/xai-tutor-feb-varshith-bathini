@@ -23,10 +23,22 @@ The API will be available at:
 ### Invoices
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/invoices` | List all invoices |
+| GET | `/invoices` | List invoices (with pagination & filtering) |
 | GET | `/invoices/{id}` | Get invoice by ID |
 | POST | `/invoices` | Create a new invoice |
+| PUT | `/invoices/{id}` | Update an existing invoice |
 | DELETE | `/invoices/{id}` | Delete an invoice |
+
+#### Query Parameters for GET `/invoices`
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | int | Max results (1-100, default: 20) |
+| `offset` | int | Skip N results (default: 0) |
+| `client_id` | int | Filter by client |
+| `issue_date_from` | date | Filter by issue date (from) |
+| `issue_date_to` | date | Filter by issue date (to) |
+| `due_date_from` | date | Filter by due date (from) |
+| `due_date_to` | date | Filter by due date (to) |
 
 ## Creating an Invoice
 
@@ -84,7 +96,8 @@ curl -X POST http://localhost:8000/invoices \
     }
   ],
   "tax": 350.0,
-  "total": 3850.0
+  "subtotal": 3000.0,
+  "total": 3350.0
 }
 ```
 
@@ -106,12 +119,13 @@ pytest tests/ -v
 │   ├── __init__.py
 │   ├── main.py              # FastAPI application entry point
 │   ├── database.py          # Database connection handling
+│   ├── schema.py            # Shared database schema definitions
 │   └── routes/
 │       ├── __init__.py
 │       ├── health.py        # Health check endpoint
 │       └── invoices.py      # Invoice CRUD endpoints
 ├── migrations/
-│   └── 002_create_invoicing_tables.py
+│   └── 001_create_invoicing_tables.py
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py          # Test fixtures
