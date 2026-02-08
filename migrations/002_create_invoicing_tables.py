@@ -37,12 +37,12 @@ def upgrade():
         conn.close()
         return
     
-    # Create products table
+    # Create products table with CHECK constraint for positive prices
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            price REAL NOT NULL
+            price REAL NOT NULL CHECK(price > 0)
         )
     """)
     
@@ -56,7 +56,7 @@ def upgrade():
         )
     """)
     
-    # Create invoices table
+    # Create invoices table with CHECK constraints
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS invoices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,28 +65,36 @@ def upgrade():
             due_date DATE NOT NULL,
             client_id INTEGER NOT NULL,
             address TEXT NOT NULL,
-            tax_percentage REAL NOT NULL DEFAULT 0,
-            tax_amount REAL NOT NULL DEFAULT 0,
-            subtotal REAL NOT NULL DEFAULT 0,
-            total REAL NOT NULL DEFAULT 0,
+            tax_percentage REAL NOT NULL DEFAULT 0 CHECK(tax_percentage >= 0),
+            tax_amount REAL NOT NULL DEFAULT 0 CHECK(tax_amount >= 0),
+            subtotal REAL NOT NULL DEFAULT 0 CHECK(subtotal >= 0),
+            total REAL NOT NULL DEFAULT 0 CHECK(total >= 0),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (client_id) REFERENCES clients (id)
         )
     """)
     
-    # Create invoice_items table
+    # Create indexes for frequently queried fields
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_client_id ON invoices(client_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_issue_date ON invoices(issue_date)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date)")
+    
+    # Create invoice_items table with CHECK constraints
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS invoice_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             invoice_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL,
-            quantity INTEGER NOT NULL DEFAULT 1,
-            unit_price REAL NOT NULL,
-            line_total REAL NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
+            unit_price REAL NOT NULL CHECK(unit_price > 0),
+            line_total REAL NOT NULL CHECK(line_total > 0),
             FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE,
             FOREIGN KEY (product_id) REFERENCES products (id)
         )
     """)
+    
+    # Create index on invoice_items for faster joins
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id)")
     
     # Seed products data
     products = [
@@ -126,6 +134,12 @@ def downgrade():
     """Revert the migration."""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
+    
+    # Drop indexes first
+    cursor.execute("DROP INDEX IF EXISTS idx_invoices_client_id")
+    cursor.execute("DROP INDEX IF EXISTS idx_invoices_issue_date")
+    cursor.execute("DROP INDEX IF EXISTS idx_invoices_due_date")
+    cursor.execute("DROP INDEX IF EXISTS idx_invoice_items_invoice_id")
     
     # Drop tables in reverse order (respecting foreign keys)
     cursor.execute("DROP TABLE IF EXISTS invoice_items")

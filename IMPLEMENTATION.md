@@ -13,8 +13,8 @@ This document describes the design decisions, architecture, and implementation d
 │ id (PK)     │       │ id (PK)     │       │ id (PK)          │
 │ name        │       │ name        │       │ invoice_no (UK)  │
 │ address     │       │ price       │       │ issue_date       │
-│ company_    │       └─────────────┘       │ due_date         │
-│ registration│              │              │ client_id (FK)───┼──┐
+│ company_    │       │ CHECK(>0)   │       │ due_date         │
+│ registration│       └─────────────┘       │ client_id (FK)───┼──┐
 │ _no         │              │              │ address          │  │
 └─────────────┘              │              │ tax_percentage   │  │
        │                     │              │ tax_amount       │  │
@@ -32,11 +32,32 @@ This document describes the design decisions, architecture, and implementation d
        │              │ id (PK)              │               │    │
        │              │ invoice_id (FK)──────┼───────────────┘    │
        │              │ product_id (FK)──────┘                    │
-       │              │ quantity                                  │
-       │              │ unit_price                                │
-       │              │ line_total                                │
+       │              │ quantity CHECK(>0)                        │
+       │              │ unit_price CHECK(>0)                      │
+       │              │ line_total CHECK(>0)                      │
        └──────────────┴──────────────────────┘◄───────────────────┘
 ```
+
+### Database Indexes
+
+For optimal query performance, the following indexes are created:
+
+| Index | Table | Column(s) | Purpose |
+|-------|-------|-----------|---------|
+| `idx_invoices_client_id` | invoices | client_id | Fast client lookups |
+| `idx_invoices_issue_date` | invoices | issue_date | Date range queries |
+| `idx_invoices_due_date` | invoices | due_date | Overdue invoice queries |
+| `idx_invoice_items_invoice_id` | invoice_items | invoice_id | Fast item lookups |
+
+### CHECK Constraints
+
+Data integrity is enforced at the database level:
+
+| Table | Constraint |
+|-------|------------|
+| products | `price > 0` |
+| invoices | `tax_percentage >= 0`, `tax_amount >= 0`, `subtotal >= 0`, `total >= 0` |
+| invoice_items | `quantity > 0`, `unit_price > 0`, `line_total > 0` |
 
 ### Design Decisions
 
@@ -129,13 +150,12 @@ app/
 | Invoice Delete | 3 |
 | Health | 1 |
 
-## Concurrency Safety
+## Invoice Number Generation
 
-Invoice number generation handles concurrent requests by:
-1. Querying the max existing invoice number
-2. Attempting to use the next sequential number
-3. Retrying with incremented number if collision detected
-4. Fallback to timestamp-based number as last resort
+Invoice numbers follow a simple sequential pattern:
+1. Query the maximum existing invoice number
+2. Increment and format as `INV-NNNN`
+3. The UNIQUE constraint on `invoice_no` prevents duplicates
 
 ## What Was NOT Implemented (Per Spec)
 

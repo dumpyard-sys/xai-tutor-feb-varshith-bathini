@@ -1,7 +1,7 @@
 """
-Migration: Create items table
+Migration: Initialize migrations table
 Version: 001
-Description: Creates the initial items table with id and name columns
+Description: Creates the migrations tracking table (original scaffold migration - kept for compatibility)
 """
 
 import sqlite3
@@ -12,6 +12,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import DATABASE_PATH
+
+MIGRATION_NAME = "001_create_items_table"
 
 
 def upgrade():
@@ -29,34 +31,21 @@ def upgrade():
     """)
     
     # Check if this migration has already been applied
-    cursor.execute("SELECT 1 FROM _migrations WHERE name = ?", ("001_create_items_table",))
+    cursor.execute("SELECT 1 FROM _migrations WHERE name = ?", (MIGRATION_NAME,))
     if cursor.fetchone():
-        print("Migration 001_create_items_table already applied. Skipping.")
+        print(f"Migration {MIGRATION_NAME} already applied. Skipping.")
         conn.close()
         return
     
-    # Create items table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL
-        )
-    """)
-    
-    # Insert some sample data
-    sample_items = [
-        ("Apple",),
-        ("Banana",),
-        ("Cherry",),
-    ]
-    cursor.executemany("INSERT INTO items (name) VALUES (?)", sample_items)
+    # Note: Original scaffold created an 'items' table here, but it's not part of
+    # the invoicing system requirements. Keeping migration for compatibility.
     
     # Record this migration
-    cursor.execute("INSERT INTO _migrations (name) VALUES (?)", ("001_create_items_table",))
+    cursor.execute("INSERT INTO _migrations (name) VALUES (?)", (MIGRATION_NAME,))
     
     conn.commit()
     conn.close()
-    print("Migration 001_create_items_table applied successfully.")
+    print(f"Migration {MIGRATION_NAME} applied successfully.")
 
 
 def downgrade():
@@ -64,15 +53,12 @@ def downgrade():
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
     
-    # Drop items table
-    cursor.execute("DROP TABLE IF EXISTS items")
-    
     # Remove migration record
-    cursor.execute("DELETE FROM _migrations WHERE name = ?", ("001_create_items_table",))
+    cursor.execute("DELETE FROM _migrations WHERE name = ?", (MIGRATION_NAME,))
     
     conn.commit()
     conn.close()
-    print("Migration 001_create_items_table reverted successfully.")
+    print(f"Migration {MIGRATION_NAME} reverted successfully.")
 
 
 if __name__ == "__main__":

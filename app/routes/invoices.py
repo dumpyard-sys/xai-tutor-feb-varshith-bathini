@@ -28,8 +28,11 @@ class InvoiceCreate(BaseModel):
     address: Optional[str] = None  # If not provided, uses client's address
     issue_date: date
     due_date: date
-    tax_percentage: float = Field(default=0.0, ge=0.0, le=100.0)
+    # Accept both 'tax' and 'tax_percentage' - spec says 'tax', we treat as percentage
+    tax: float = Field(default=0.0, ge=0.0, le=100.0, alias="tax_percentage")
     items: List[InvoiceItemCreate] = Field(..., min_length=1)
+
+    model_config = {"populate_by_name": True}  # Allow both field name and alias
 
     @model_validator(mode='after')
     def validate_dates(self):
@@ -82,40 +85,25 @@ class InvoiceListItem(BaseModel):
     total: float
 
 
+class InvoiceListResponse(BaseModel):
+    """Schema for list invoices response."""
+    invoices: List[InvoiceListItem]
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
 
-def generate_invoice_number(conn) -> str:
+def generate_invoice_number(cursor) -> str:
     """
     Generate a unique sequential invoice number.
-    Uses a retry loop to handle concurrent requests safely.
+    Simple approach: get max existing number and increment.
+    UNIQUE constraint on invoice_no column ensures no duplicates.
     """
-    cursor = conn.cursor()
-    max_retries = 5
-    
-    for attempt in range(max_retries):
-        # Get the next number based on existing invoices
-        cursor.execute("SELECT MAX(CAST(SUBSTR(invoice_no, 5) AS INTEGER)) FROM invoices")
-        result = cursor.fetchone()
-        next_num = (result[0] or 0) + 1
-        invoice_no = f"INV-{next_num:04d}"
-        
-        # Try to use this number - if it fails due to uniqueness, retry
-        try:
-            # Check if it already exists
-            cursor.execute("SELECT 1 FROM invoices WHERE invoice_no = ?", (invoice_no,))
-            if cursor.fetchone() is None:
-                return invoice_no
-        except Exception:
-            pass
-        
-        # If we get here, try the next number
-        next_num += 1
-    
-    # Fallback: use timestamp-based number
-    import time
-    return f"INV-{int(time.time())}"
+    cursor.execute("SELECT MAX(CAST(SUBSTR(invoice_no, 5) AS INTEGER)) FROM invoices")
+    result = cursor.fetchone()
+    next_num = (result[0] or 0) + 1
+    return f"INV-{next_num:04d}"
 
 
 def get_client_by_id(cursor, client_id: int) -> dict:
@@ -172,7 +160,7 @@ def get_invoice_items(cursor, invoice_id: int) -> list:
 # API Endpoints
 # ============================================================================
 
-@router.get("", response_model=dict)
+@router.get("", response_model=InvoiceListResponse)
 def list_invoices():
     """
     List all invoices with summary information.
@@ -193,19 +181,19 @@ def list_invoices():
             """)
             rows = cursor.fetchall()
             invoices = [
-                {
-                    "id": row["id"],
-                    "invoice_no": row["invoice_no"],
-                    "issue_date": row["issue_date"],
-                    "due_date": row["due_date"],
-                    "client_name": row["client_name"],
-                    "item_count": row["item_count"],
-                    "tax": row["tax_amount"],
-                    "total": row["total"]
-                }
+                InvoiceListItem(
+                    id=row["id"],
+                    invoice_no=row["invoice_no"],
+                    issue_date=row["issue_date"],
+                    due_date=row["due_date"],
+                    client_name=row["client_name"],
+                    item_count=row["item_count"],
+                    tax=row["tax_amount"],
+                    total=row["total"]
+                )
                 for row in rows
             ]
-            return {"invoices": invoices}
+            return InvoiceListResponse(invoices=invoices)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
@@ -238,17 +226,17 @@ def get_invoice(invoice_id: int):
             # Fetch items
             items = get_invoice_items(cursor, invoice_id)
             
-            return {
-                "id": row["id"],
-                "invoice_no": row["invoice_no"],
-                "issue_date": row["issue_date"],
-                "due_date": row["due_date"],
-                "client": client,
-                "address": row["address"],
-                "items": items,
-                "tax": row["tax_amount"],
-                "total": row["total"]
-            }
+            return InvoiceResponse(
+                id=row["id"],
+                invoice_no=row["invoice_no"],
+                issue_date=row["issue_date"],
+                due_date=row["due_date"],
+                client=ClientResponse(**client),
+                address=row["address"],
+                items=[InvoiceItemResponse(**item) for item in items],
+                tax=row["tax_amount"],
+                total=row["total"]
+            )
     except HTTPException:
         raise
     except Exception as e:
@@ -262,6 +250,7 @@ def create_invoice(invoice: InvoiceCreate):
     - Auto-generates invoice number (INV-0001, INV-0002, etc.)
     - Calculates tax and total automatically
     - Uses client's address if not provided
+    - Accepts 'tax' or 'tax_percentage' as input (percentage value)
     """
     try:
         with get_db() as conn:
@@ -297,12 +286,12 @@ def create_invoice(invoice: InvoiceCreate):
                     "line_total": line_total
                 })
             
-            # Calculate tax and total
-            tax_amount = subtotal * (invoice.tax_percentage / 100)
+            # Calculate tax and total (invoice.tax is the percentage)
+            tax_amount = subtotal * (invoice.tax / 100)
             total = subtotal + tax_amount
             
-            # Generate invoice number (handles concurrency)
-            invoice_no = generate_invoice_number(conn)
+            # Generate invoice number
+            invoice_no = generate_invoice_number(cursor)
             
             # Insert invoice
             cursor.execute("""
@@ -316,7 +305,7 @@ def create_invoice(invoice: InvoiceCreate):
                 invoice.due_date.isoformat(),
                 invoice.client_id,
                 address,
-                invoice.tax_percentage,
+                invoice.tax,
                 tax_amount,
                 subtotal,
                 total
@@ -337,26 +326,26 @@ def create_invoice(invoice: InvoiceCreate):
                     detail["unit_price"],
                     detail["line_total"]
                 ))
-                items_response.append({
-                    "id": cursor.lastrowid,
-                    "product_id": detail["product_id"],
-                    "product_name": detail["product_name"],
-                    "quantity": detail["quantity"],
-                    "unit_price": detail["unit_price"],
-                    "line_total": detail["line_total"]
-                })
+                items_response.append(InvoiceItemResponse(
+                    id=cursor.lastrowid,
+                    product_id=detail["product_id"],
+                    product_name=detail["product_name"],
+                    quantity=detail["quantity"],
+                    unit_price=detail["unit_price"],
+                    line_total=detail["line_total"]
+                ))
             
-            return {
-                "id": invoice_id,
-                "invoice_no": invoice_no,
-                "issue_date": invoice.issue_date,
-                "due_date": invoice.due_date,
-                "client": client,
-                "address": address,
-                "items": items_response,
-                "tax": tax_amount,
-                "total": total
-            }
+            return InvoiceResponse(
+                id=invoice_id,
+                invoice_no=invoice_no,
+                issue_date=invoice.issue_date,
+                due_date=invoice.due_date,
+                client=ClientResponse(**client),
+                address=address,
+                items=items_response,
+                tax=tax_amount,
+                total=total
+            )
     except HTTPException:
         raise
     except Exception as e:

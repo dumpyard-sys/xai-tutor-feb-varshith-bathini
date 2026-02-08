@@ -37,7 +37,7 @@ curl -X POST http://localhost:8000/invoices \
     "client_id": 1,
     "issue_date": "2026-02-08",
     "due_date": "2026-03-08",
-    "tax_percentage": 10.0,
+    "tax": 10.0,
     "items": [
       {"product_id": 1, "quantity": 2},
       {"product_id": 2, "quantity": 1}
@@ -52,7 +52,7 @@ curl -X POST http://localhost:8000/invoices \
 | `client_id` | integer | Yes | ID of the client (from seed data) |
 | `issue_date` | string (date) | Yes | Invoice issue date (YYYY-MM-DD) |
 | `due_date` | string (date) | Yes | Invoice due date (must be >= issue_date) |
-| `tax_percentage` | float | No | Tax percentage (default: 0) |
+| `tax` | float | No | Tax percentage (default: 0). Also accepts `tax_percentage` |
 | `address` | string | No | Billing address (defaults to client's address) |
 | `items` | array | Yes | List of invoice items (min 1) |
 | `items[].product_id` | integer | Yes | ID of the product (from seed data) |
